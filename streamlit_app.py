@@ -1,115 +1,95 @@
 import streamlit as st
-import requests
+from groq import Groq
+import os
+from dotenv import load_dotenv
 
-# -----------------------------
-# Page configuration
-# -----------------------------
+# Load .env for local use
+load_dotenv()
+
+# Page settings
 st.set_page_config(
     page_title="AI Chatbot",
-    page_icon="🤖",
-    layout="centered"
+    page_icon="🤖"
 )
 
-# -----------------------------
-# Title
-# -----------------------------
+# Get Groq API key
+api_key = os.getenv("GROQ_API_KEY")
+
+# Get Streamlit Cloud secret if .env is not available
+if api_key is None:
+    try:
+        api_key = st.secrets["GROQ_API_KEY"]
+    except Exception:
+        api_key = None
+
+# Check API key
+if api_key is None:
+    st.error("GROQ_API_KEY is not configured.")
+    st.stop()
+
+# Create Groq client
+client = Groq(api_key=api_key)
+
+# App title
 st.title("🤖 AI Chatbot")
-st.caption("Powered by FastAPI + Groq")
+st.write("Powered by Groq + Streamlit")
 
-# -----------------------------
-# FastAPI URL
-# -----------------------------
-API_URL = "http://127.0.0.1:8000/predict"
-
-# -----------------------------
-# Chat history
-# -----------------------------
+# Create chat history
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# -----------------------------
 # Display previous messages
-# -----------------------------
 for message in st.session_state.messages:
-
     with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+        st.write(message["content"])
 
-# -----------------------------
 # Chat input
-# -----------------------------
 question = st.chat_input("Ask me anything...")
 
 if question:
 
-    # Show user message
+    # Add user message
     st.session_state.messages.append({
         "role": "user",
         "content": question
     })
 
+    # Display user message
     with st.chat_message("user"):
-        st.markdown(question)
+        st.write(question)
 
-    # Send question to FastAPI
     try:
-        response = requests.post(
-            API_URL,
-            json={
-                "question": question
-            },
-            timeout=60
-        )
 
-        # Check response
-        if response.status_code == 200:
+        # Generate AI response
+        with st.spinner("Thinking..."):
 
-            data = response.json()
-            answer = data["answer"]
-
-            # Show AI response
-            with st.chat_message("assistant"):
-                st.markdown(answer)
-
-            # Save AI response
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": answer
-            })
-
-        else:
-
-            st.error(
-                f"API Error: {response.status_code}\n\n"
-                f"{response.text}"
+            response = client.chat.completions.create(
+                model="openai/gpt-oss-20b",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": question
+                    }
+                ]
             )
 
-    except requests.exceptions.ConnectionError:
+        # Get answer
+        answer = response.choices[0].message.content
 
-        st.error(
-            "❌ Cannot connect to FastAPI.\n\n"
-            "Make sure your FastAPI server is running."
-        )
+        # Display AI answer
+        with st.chat_message("assistant"):
+            st.write(answer)
 
-    except requests.exceptions.Timeout:
-
-        st.error(
-            "⏱️ The request took too long. "
-            "Please try again."
-        )
+        # Save AI answer
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer
+        })
 
     except Exception as e:
+        st.error("Error: " + str(e))
 
-        st.error(f"Unexpected error: {e}")
-
-
-# -----------------------------
 # Clear chat button
-# -----------------------------
-if st.session_state.messages:
-
-    if st.button("🗑️ Clear Chat"):
-
-        st.session_state.messages = []
-
-        st.rerun()
+if st.button("Clear Chat"):
+    st.session_state.messages = []
+    st.rerun()
